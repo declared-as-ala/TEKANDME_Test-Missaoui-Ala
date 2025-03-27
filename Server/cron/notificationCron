@@ -1,0 +1,47 @@
+// server/src/cron/notificationCron.js
+const cron = require('node-cron');
+const Task = require('../models/Task');
+const User = require('../models/User');
+const nodemailer = require('nodemailer');
+
+// Configure mailer
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.MAIL_USER,     // e.g. "yourapp@gmail.com"
+    pass: process.env.MAIL_PASSWORD, // app password or real password
+  },
+});
+
+// Run every day at 08:00 AM
+cron.schedule('0 8 * * *', async () => {
+  console.log('⏰ [CRON] Checking for overdue tasks...');
+
+  try {
+    const now = new Date();
+
+    // Find all overdue and incomplete tasks
+    const tasks = await Task.find({
+      isCompleted: false,
+      dueDate: { $lt: now },
+    }).populate('user'); // populate user to get email
+
+    for (const task of tasks) {
+      const user = task.user;
+
+      if (!user?.email) continue;
+
+      // Send email
+      await transporter.sendMail({
+        from: `"Todo App" <${process.env.MAIL_USER}>`,
+        to: user.email,
+        subject: `🔔 Overdue Task: ${task.title}`,
+        text: `Hi! Your task "${task.title}" was due on ${task.dueDate.toDateString()} and is still incomplete.\n\nPlease take action!`,
+      });
+
+      console.log(`📧 Reminder sent to ${user.email} for task: ${task.title}`);
+    }
+  } catch (error) {
+    console.error('❌ Cron job error:', error);
+  }
+});
